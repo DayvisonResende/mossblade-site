@@ -1,0 +1,960 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Mossblade</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+/* Layout: cena em canvas por trás de tudo, com ciclo de dia, tarde e noite controlado pelo
+   "Relógio do mundo" (canto inferior direito); navegação no topo como menu de jogo;
+   uma seção por vez (hash); painéis retos com borda lavanda, iguais à tela de login. */
+:root{
+  --ink:#05040f; --night:#0b0920; --panel:#0f0d22; --panel-2:#17133a; --line:#d6d2f2;
+  --text:#ece8ff; --muted:#aaa4d4; --orange:#f0a04b; --orange-d:#b8702a;
+  --moss:#4fb83a; --moss-d:#256b2d; --moon:#f4ecd0; --steel:#aab8c8; --field:#080716; --field-line:#3a3470;
+  --display:'Pixelify Sans', ui-monospace, 'Courier New', monospace;
+  --label:'Press Start 2P', ui-monospace, 'Courier New', monospace;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{scrollbar-color:#3a2f78 #0b0920}
+body{background:var(--night);color:var(--text);font-family:var(--display);font-size:17px;line-height:1.55;min-height:100%}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:19;background:var(--panel)}
+#bg{position:fixed;inset:0;width:100%;height:100%;z-index:0;image-rendering:pixelated;display:block}
+.wrap{max-width:1112px;margin-inline:auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.top,main,.foot{position:relative;z-index:1}
+a{color:var(--orange)}
+:focus-visible{outline:3px solid var(--orange);outline-offset:3px}
+h1,h2,h3,p{margin:0}
+canvas.ico{width:32px;height:32px;image-rendering:pixelated;flex:none}
+canvas.ico.lg{width:48px;height:48px}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* Topo */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--panel);border-bottom:3px solid var(--line);box-shadow:0 4px 0 var(--ink)}
+.top .wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 20px;padding-block:10px}
+.brand{display:block;line-height:0}
+.brand img{height:38px;width:auto;image-rendering:pixelated}
+.nav{display:flex;flex-wrap:wrap;gap:6px}
+.nav a{font-weight:600;font-size:16px;color:var(--text);text-decoration:none;padding:6px 12px;border:3px solid transparent}
+.nav a:hover{border-color:var(--line)}
+.nav a.on{background:var(--orange);color:var(--ink);border-color:var(--ink)}
+
+/* Botões e painéis */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;font:700 20px/1 var(--display);letter-spacing:.04em;text-transform:uppercase;text-decoration:none;
+  padding:15px 24px;background:var(--orange);color:var(--ink);border:0;cursor:pointer;
+  box-shadow:inset 0 -5px 0 var(--orange-d),0 0 0 3px var(--ink),5px 5px 0 3px var(--ink)}
+.btn:hover{transform:translateY(-2px);background:#f6b062}
+.btn:active{transform:translate(3px,3px);box-shadow:inset 0 -2px 0 var(--orange-d),0 0 0 3px var(--ink),2px 2px 0 3px var(--ink)}
+.btn.ghost{background:var(--panel);color:var(--text);box-shadow:inset 0 -5px 0 #1d1850,0 0 0 3px var(--line),5px 5px 0 3px var(--ink)}
+.btn.ghost:hover{background:var(--panel-2)}
+.btn.sm{font-size:15px;padding:10px 14px;box-shadow:inset 0 -4px 0 var(--orange-d),0 0 0 3px var(--ink),3px 3px 0 3px var(--ink)}
+.btn[disabled]{background:#2a2552;color:var(--muted);cursor:not-allowed;box-shadow:inset 0 -5px 0 #1d1850,0 0 0 3px var(--ink);transform:none}
+.btn canvas.ico{width:24px;height:24px}
+.panel{background:var(--panel);border:3px solid var(--line);box-shadow:0 0 0 3px var(--ink),6px 6px 0 3px var(--ink);padding:20px}
+.chip{display:inline-block;font-family:var(--label);font-size:9px;line-height:1;letter-spacing:.04em;padding:6px 7px;border:2px solid var(--ink);color:var(--ink);white-space:nowrap}
+.chip.ok{background:var(--moss)} .chip.wip{background:var(--orange)} .chip.soon{background:var(--steel)}
+.label{font-family:var(--label);font-size:10px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+
+/* Estrutura das seções (troca de tela em degraus, como num jogo) */
+.stack{display:grid;gap:40px;padding-block:28px 64px}
+.view:not([hidden]){animation:appear .42s steps(5) both}
+@keyframes appear{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.view-head{display:grid;gap:10px}
+.h2{display:flex;align-items:center;gap:14px;font-size:clamp(30px,5vw,46px);font-weight:700;line-height:1.1;color:var(--moon);text-shadow:3px 3px 0 var(--ink);text-wrap:balance}
+.h3{font-size:22px;font-weight:700;color:var(--moon);line-height:1.2}
+.lead{max-width:62ch;color:var(--text)}
+.muted{color:var(--muted)}
+
+/* Home */
+.hero{display:grid;justify-items:center;text-align:center;gap:30px;padding-block:clamp(24px,6vw,60px) 8px}
+.logo-wrap{position:relative;width:min(800px,100%);animation:drop .9s steps(6) both,float 3.4s steps(4) .9s infinite alternate}
+.hero-logo{display:block;width:100%;height:auto;image-rendering:pixelated;filter:drop-shadow(0 6px 0 rgba(5,4,15,.6))}
+@keyframes drop{from{transform:translateY(-36px)}to{transform:translateY(0)}}
+@keyframes float{from{transform:translateY(0)}to{transform:translateY(-8px)}}
+.spk{position:absolute;width:4px;height:4px;background:#fff;box-shadow:0 -4px 0 #fff,0 4px 0 #fff,-4px 0 0 #fff,4px 0 0 #fff;opacity:0;pointer-events:none;animation:spk 3.2s steps(1) infinite}
+@keyframes spk{0%{opacity:0;transform:scale(.5)}6%{opacity:1;transform:scale(.5)}12%{opacity:1;transform:scale(1)}18%{opacity:1;transform:scale(.5)}24%,100%{opacity:0}}
+
+/* Caixa de diálogo estilo RPG */
+.say{position:relative;width:min(720px,100%);text-align:left;background:rgba(8,7,22,.95);border:3px solid var(--line);padding:26px 26px 24px;cursor:pointer;
+  box-shadow:0 0 0 3px var(--ink),inset 0 0 0 3px var(--ink),inset 0 0 0 5px #3a3470,6px 6px 0 3px var(--ink)}
+.say-name{position:absolute;top:-15px;left:18px;font-family:var(--label);font-size:10px;line-height:1;letter-spacing:.06em;background:var(--orange);color:var(--ink);border:3px solid var(--ink);padding:6px 9px}
+.say-text{display:grid;font-size:clamp(18px,2.3vw,22px);color:var(--moon);line-height:1.45}
+.say-text>span{grid-area:1/1}
+.say-text .ghost{visibility:hidden}
+.say-sub{margin-top:12px;padding-top:12px;border-top:3px dashed #2a2460;color:var(--muted);font-size:16px}
+.say-next{position:absolute;right:16px;bottom:10px;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid var(--orange);animation:nudge .8s steps(2) infinite}
+.say.typing .say-next{visibility:hidden}
+@keyframes nudge{50%{transform:translateY(3px)}}
+.cta{display:flex;flex-wrap:wrap;justify-content:center;gap:20px}
+
+.grid{display:grid;gap:24px}
+.g-feat{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.feat{display:grid;gap:10px;align-content:start}
+.feat p{color:var(--muted)}
+.feat canvas.ico{transition:transform .2s steps(2)}
+.feat:hover canvas.ico{transform:translateY(-4px) rotate(-6deg)}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.steps li{display:grid;gap:10px;align-content:start}
+.num{display:grid;place-items:center;width:40px;height:40px;background:var(--orange);color:var(--ink);font-family:var(--label);font-size:14px;border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink)}
+.road{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.road li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;padding:14px 0;border-top:3px solid #231e52}
+.road li:first-child{border-top:0;padding-top:0}
+.road li:last-child{padding-bottom:0}
+.road small{display:block;color:var(--muted);font-size:15px}
+
+/* Wiki */
+.notice{display:flex;gap:12px;align-items:flex-start;background:var(--panel-2);border:3px solid var(--orange);padding:12px 14px;box-shadow:4px 4px 0 var(--ink)}
+.wiki{display:grid;grid-template-columns:230px minmax(0,1fr);gap:28px;align-items:start}
+.cats{display:grid;gap:6px}
+.cat{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;color:var(--text);border:3px solid transparent;font:600 17px var(--display);padding:8px 10px;cursor:pointer}
+.cat:hover{border-color:var(--line)}
+.cat[aria-pressed="true"]{background:var(--orange);color:var(--ink);border-color:var(--ink)}
+.cat span:last-child{font-family:var(--label);font-size:10px;align-self:center}
+.field{display:grid;gap:8px;margin-bottom:24px}
+.field.panel{padding:14px 16px 16px}
+.field input{width:100%;font:500 18px var(--display);color:var(--text);background:var(--field);border:3px solid var(--field-line);padding:12px 14px;border-radius:0}
+.field input:focus{outline:none;border-color:var(--orange)}
+.entries{display:grid;gap:18px}
+.entry{background:var(--panel);border:3px solid var(--line);box-shadow:0 0 0 3px var(--ink),5px 5px 0 3px var(--ink)}
+.entry-head{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:transparent;color:var(--text);border:0;font:inherit;padding:14px 16px;cursor:pointer}
+.entry-head:hover{background:var(--panel-2)}
+.entry-head .t{display:grid;gap:4px;min-width:0;flex:1}
+.entry-head strong{font-size:20px;color:var(--moon)}
+.entry-head .s{color:var(--muted);font-size:15px}
+.entry-head .chev{font-family:var(--label);font-size:14px;color:var(--orange)}
+.entry-body{padding:4px 16px 18px 16px;display:grid;gap:14px;border-top:3px solid #231e52}
+.facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 18px;margin:12px 0 0}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0}
+.empty{padding:22px;text-align:center;color:var(--muted)}
+
+/* Mídia */
+.g-media{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
+.shot{display:grid;gap:10px;padding:14px;align-content:start}
+.shot-btn{display:block;width:100%;padding:0;border:3px solid var(--field-line);background:var(--field);cursor:zoom-in;aspect-ratio:16/9;overflow:hidden}
+.shot-btn:hover{border-color:var(--orange)}
+.shot-btn img{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+.shot-btn.cover img{object-fit:cover}
+.shot-soon{display:grid;place-items:center;gap:10px;aspect-ratio:16/9;border:3px solid var(--field-line);background:repeating-linear-gradient(45deg,#0c0a1e 0 8px,#100d28 8px 16px);color:var(--muted);text-align:center;padding:10px}
+.shot figcaption{font-size:16px}
+.shot figcaption b{display:block;color:var(--moon);font-size:18px}
+.lb{position:fixed;inset:0;z-index:50;display:grid;place-items:center;gap:14px;align-content:center;background:rgba(5,4,15,.94);
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.lb img{max-width:100%;max-height:78vh;border:3px solid var(--line);background:var(--field);image-rendering:pixelated}
+
+/* Fórum */
+.boards{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.boards li{display:flex;align-items:center;gap:14px;padding:14px 0;border-top:3px solid #231e52}
+.boards li:first-child{border-top:0;padding-top:0}
+.boards li:last-child{padding-bottom:0}
+.boards .t{flex:1;min-width:0}
+.boards strong{display:block;font-size:19px;color:var(--moon)}
+.boards span.d{color:var(--muted);font-size:15px}
+
+/* Comandos */
+.g-cmd{grid-template-columns:repeat(auto-fit,minmax(290px,1fr))}
+.cmd{display:grid;gap:12px;align-content:start}
+.cmd p{color:var(--muted)}
+.keys{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.keys .or{color:var(--muted);font-size:15px;padding:0 4px}
+kbd{display:inline-grid;place-items:center;min-width:44px;height:44px;padding:0 10px;font-family:var(--label);font-size:12px;color:var(--text);background:#2a2466;border:3px solid var(--ink);
+  box-shadow:inset 0 -6px 0 #19144a,0 0 0 2px var(--line);cursor:pointer;user-select:none}
+kbd.wide{padding:0 16px;font-size:10px}
+kbd.down{background:var(--orange);color:var(--ink);transform:translateY(4px);box-shadow:inset 0 -2px 0 var(--orange-d),0 0 0 2px var(--line)}
+
+/* Loja */
+.g-shop{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.prod{display:grid;gap:14px;justify-items:start}
+.prod-art{display:grid;place-items:center;width:100%;padding:18px;background:var(--field);border:3px solid var(--field-line)}
+.prod-art canvas{width:144px;height:144px;image-rendering:pixelated;animation:bob 1.1s steps(2) infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-8px)}}
+
+/* Rodapé */
+.foot{margin-top:8px;background:var(--panel);border-top:3px solid var(--line)}
+.foot .wrap{display:flex;flex-wrap:wrap;gap:14px 28px;align-items:center;justify-content:space-between;padding-block:22px max(22px,env(safe-area-inset-bottom,0px))}
+.foot-brand{display:flex;align-items:center;gap:18px}
+.foot img{height:30px;width:auto;image-rendering:pixelated;display:block}
+.foot nav{display:flex;flex-wrap:wrap;gap:6px 16px}
+.foot nav a{color:var(--text);text-decoration:none;font-weight:600}
+.foot nav a:hover{color:var(--orange)}
+.foot small{color:var(--muted);font-size:15px;width:100%}
+.chest{position:relative;background:none;border:0;padding:4px;cursor:pointer;line-height:0}
+.chest canvas{width:36px;height:30px;image-rendering:pixelated;display:block}
+.chest:hover canvas{transform:translateY(-2px)}
+.chest .spk{display:none}
+.chest.open .spk{display:block}
+
+/* Relógio do mundo: controle manual do céu */
+.clock{position:fixed;right:max(14px,env(safe-area-inset-right,0px));bottom:max(14px,env(safe-area-inset-bottom,0px));z-index:30}
+.clock[data-open="true"] .clock-mini,.clock[data-open="false"] .clock-body{display:none}
+.clock-mini{display:flex;align-items:center;gap:10px;font:700 14px/1 var(--label);color:var(--moon);background:var(--panel);border:3px solid var(--line);
+  box-shadow:0 0 0 3px var(--ink),5px 5px 0 3px var(--ink);padding:10px 14px;cursor:pointer}
+.clock-mini:hover{background:var(--panel-2)}
+.clock-mini canvas{width:24px;height:24px;image-rendering:pixelated}
+.clock-body{width:min(304px,calc(100vw - 28px));display:grid;gap:12px;padding:14px 14px 16px}
+.clock-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.x-btn{display:grid;place-items:center;width:30px;height:30px;padding:0;background:#2a2466;color:var(--text);border:3px solid var(--ink);box-shadow:0 0 0 2px var(--line);font:700 14px/1 var(--label);cursor:pointer}
+.x-btn:hover{background:#352e7c}
+.dial{display:block;width:100%;height:auto;aspect-ratio:60/24;image-rendering:pixelated;border:3px solid var(--ink);box-shadow:0 0 0 2px var(--line)}
+.clock-read{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.clock-read strong{font-family:var(--label);font-weight:400;font-size:20px;color:var(--moon);text-shadow:3px 3px 0 var(--ink)}
+.tbtns{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.tbtn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;font:600 15px/1 var(--display);color:var(--text);background:#2a2466;border:3px solid var(--ink);
+  box-shadow:inset 0 -4px 0 #19144a,0 0 0 2px var(--line);padding:8px 4px 11px;cursor:pointer;white-space:nowrap}
+.tbtn:hover{background:#352e7c}
+.tbtn:active{transform:translateY(2px)}
+.tbtn[aria-pressed="true"]{background:var(--orange);color:var(--ink);box-shadow:inset 0 -4px 0 var(--orange-d),0 0 0 2px var(--line)}
+.tbtn canvas{width:16px;height:16px;image-rendering:pixelated;flex:none}
+.range{-webkit-appearance:none;appearance:none;display:block;width:100%;height:26px;margin:0;background:transparent;cursor:pointer}
+.range::-webkit-slider-runnable-track{box-sizing:border-box;height:14px;border:3px solid var(--ink);box-shadow:0 0 0 2px var(--line);background:var(--daygrad)}
+.range::-webkit-slider-thumb{-webkit-appearance:none;box-sizing:border-box;width:14px;height:24px;margin-top:-8px;background:var(--orange);border:3px solid var(--ink);box-shadow:inset 0 -4px 0 var(--orange-d)}
+.range::-moz-range-track{box-sizing:border-box;height:14px;border:3px solid var(--ink);box-shadow:0 0 0 2px var(--line);background:var(--daygrad)}
+.range::-moz-range-thumb{box-sizing:border-box;width:14px;height:24px;border-radius:0;background:var(--orange);border:3px solid var(--ink);box-shadow:inset 0 -4px 0 var(--orange-d)}
+.range:focus-visible{outline:3px solid var(--orange);outline-offset:4px}
+:root{--daygrad:linear-gradient(90deg,#120e33 0%,#1e1848 18%,#d9787a 23%,#fcd08a 27.5%,#7cc0f0 37.5%,#62b2f2 54%,#f2d9a4 67%,#fba84e 75%,#4a2f6e 80.5%,#18123f 86%,#120e33 100%)}
+
+/* Aviso de segredo (usa a caixa de diálogo) */
+.toast{position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:40;width:min(560px,calc(100vw - 32px))}
+
+@media (max-width:760px){
+  .wiki{grid-template-columns:minmax(0,1fr)}
+  .cats{display:flex;flex-wrap:wrap}
+  .cat{width:auto;gap:12px}
+  .nav a{padding:5px 9px;font-size:15px}
+  .btn{font-size:18px;padding:14px 18px}
+  .say{padding:24px 18px 22px}
+  .toast{bottom:max(84px,env(safe-area-inset-bottom,0px))}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+
+<canvas id="bg" aria-hidden="true"></canvas>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#home" aria-label="Mossblade, início"><img src="logo.png" alt="Mossblade" width="1098" height="288"></a>
+    <nav class="nav" aria-label="Principal">
+      <a href="#home" data-nav="home">Home</a>
+      <a href="#wiki" data-nav="wiki">Wiki</a>
+      <a href="#midia" data-nav="midia">Mídia</a>
+      <a href="#forum" data-nav="forum">Fórum</a>
+      <a href="#comandos" data-nav="comandos">Comandos</a>
+      <a href="#loja" data-nav="loja">Loja</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <!-- HOME -->
+    <section class="view stack" data-view="home" aria-label="Home">
+      <div class="hero">
+        <div class="logo-wrap">
+          <img class="hero-logo" src="logo.png" alt="Mossblade" width="1098" height="288">
+          <i class="spk" style="left:8%;top:10%;animation-delay:.3s"></i>
+          <i class="spk" style="left:47%;top:6%;animation-delay:1.4s"></i>
+          <i class="spk" style="left:88%;top:14%;animation-delay:2.3s"></i>
+          <i class="spk" style="left:95%;top:76%;animation-delay:.9s"></i>
+          <i class="spk" style="left:28%;top:56%;animation-delay:2.8s"></i>
+        </div>
+        <div class="say" id="say">
+          <span class="say-name" aria-hidden="true">O EREMITA</span>
+          <p class="say-text"><span class="sr" id="saySr"></span><span class="ghost" id="sayGhost" aria-hidden="true"></span><span id="sayTyped" aria-hidden="true"></span></p>
+          <p class="say-sub">Aventura 2D de ação em pixel art 16x16, inspirada nos clássicos Zelda. Crie sua conta e comece a jogar.</p>
+          <i class="say-next" aria-hidden="true"></i>
+        </div>
+        <div class="cta">
+          <a class="btn" href="http://pifatec.useconectai.com.br:2567/" target="_blank" rel="noopener"><canvas class="ico" data-ico="sword" aria-hidden="true"></canvas>Jogar agora</a>
+          <a class="btn ghost" href="#comandos">Ver comandos</a>
+        </div>
+      </div>
+
+      <div class="grid g-feat">
+        <article class="panel feat"><canvas class="ico lg" data-ico="frame" aria-hidden="true"></canvas><h3 class="h3">Pixel art 16x16</h3><p>Personagens e cenários numa grade de 16 por 16 pixels, com a cara dos clássicos de 16 bits.</p></article>
+        <article class="panel feat"><canvas class="ico lg" data-ico="tree" aria-hidden="true"></canvas><h3 class="h3">Aventura estilo Zelda</h3><p>Visão de cima, exploração e itens para encontrar, como nos Zelda clássicos.</p></article>
+        <article class="panel feat"><canvas class="ico lg" data-ico="sword" aria-hidden="true"></canvas><h3 class="h3">Combate de ação</h3><p>Espada, arco, gancho, cajados e bombas contra gelecas, besouros e o Rei Geleca.</p></article>
+        <article class="panel feat"><canvas class="ico lg" data-ico="key" aria-hidden="true"></canvas><h3 class="h3">Jogue no navegador</h3><p>Sem instalar nada. No computador, no celular ou com controle, em grupo de até 4.</p></article>
+      </div>
+
+      <div class="panel view-head">
+        <h2 class="h2"><canvas class="ico lg" data-ico="shield" aria-hidden="true"></canvas>Como começar</h2>
+      </div>
+      <ol class="steps">
+        <li class="panel"><span class="num">1</span><h3 class="h3">Crie sua conta</h3><p class="muted">Na tela de entrada do jogo, escolha “Criar conta” e defina usuário e senha.</p></li>
+        <li class="panel"><span class="num">2</span><h3 class="h3">Entre</h3><p class="muted">Digite usuário e senha e aperte “Entrar”.</p></li>
+        <li class="panel"><span class="num">3</span><h3 class="h3">Explore</h3><p class="muted">Consulte os <a href="#comandos">comandos</a> e use a <a href="#wiki">wiki</a> quando travar.</p></li>
+      </ol>
+
+      <div class="panel">
+        <h2 class="h3" style="margin-bottom:16px">O que vem por aí</h2>
+        <ul class="road">
+          <li><div><strong>Site oficial</strong><small>Home, mídia e comandos</small></div><span class="chip ok">NO AR</span></li>
+          <li><div><strong>Wiki</strong><small>Itens, inimigos, locais e mecânicas</small></div><span class="chip wip">EM OBRAS</span></li>
+          <li><div><strong>Fórum</strong><small>Dicas, bugs e sugestões da comunidade</small></div><span class="chip soon">EM BREVE</span></li>
+          <li><div><strong>Loja</strong><small>Canecas e camisetas do Mossblade</small></div><span class="chip soon">EM BREVE</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- WIKI -->
+    <section class="view stack" data-view="wiki" aria-label="Wiki" hidden>
+      <div class="panel view-head">
+        <h2 class="h2"><canvas class="ico lg" data-ico="book" aria-hidden="true"></canvas>Wiki</h2>
+        <p class="lead">Tudo sobre o mundo de Mossblade num só lugar: itens, inimigos, locais e como o jogo funciona.</p>
+      </div>
+      <div class="notice"><span class="chip wip">OBRAS</span><p>A wiki está crescendo. Novas páginas chegam junto com as atualizações do jogo.</p></div>
+      <div class="wiki">
+        <aside class="panel" aria-label="Categorias">
+          <div class="cats" id="cats"></div>
+        </aside>
+        <div>
+          <div class="field panel">
+            <label class="label" for="wikiq">Buscar na wiki</label>
+            <input id="wikiq" type="search" placeholder="Geleca, gancho, Peixe-lua…" autocomplete="off">
+          </div>
+          <div class="entries" id="entries" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MÍDIA -->
+    <section class="view stack" data-view="midia" aria-label="Mídia" hidden>
+      <div class="panel view-head">
+        <h2 class="h2"><canvas class="ico lg" data-ico="frame" aria-hidden="true"></canvas>Mídia</h2>
+        <p class="lead">Imagens, logo e, em breve, vídeos e trilha sonora. Clique numa imagem para ampliar.</p>
+      </div>
+      <div class="grid g-media">
+        <figure class="panel shot" style="margin:0">
+          <button class="shot-btn" type="button" data-src="login.png" data-alt="Tela de entrada do jogo: floresta pixelada à noite, com lua cheia e vaga-lumes, e o formulário de login do Mossblade"><img src="login.png" alt="Tela de entrada do Mossblade com floresta à noite" loading="lazy"></button>
+          <figcaption><b>Tela de entrada</b>Floresta, lua cheia e vaga-lumes.</figcaption>
+        </figure>
+        <figure class="panel shot" style="margin:0">
+          <button class="shot-btn" type="button" data-src="logo.png" data-alt="Logo do Mossblade: letras de pedra cobertas de musgo sobre uma espada"><img src="logo.png" alt="Logo do Mossblade" loading="lazy"></button>
+          <figcaption><b>Logo</b>Letras de pedra, musgo e uma espada.</figcaption>
+        </figure>
+        <figure class="panel shot" style="margin:0">
+          <div class="shot-soon"><canvas class="ico lg" data-ico="sword" aria-hidden="true"></canvas><span>GIFs de combate</span></div>
+          <figcaption><b>Combate</b><span class="chip soon">EM BREVE</span></figcaption>
+        </figure>
+        <figure class="panel shot" style="margin:0">
+          <div class="shot-soon"><canvas class="ico lg" data-ico="tree" aria-hidden="true"></canvas><span>Mapas e cenários</span></div>
+          <figcaption><b>Mundo</b><span class="chip soon">EM BREVE</span></figcaption>
+        </figure>
+        <figure class="panel shot" style="margin:0">
+          <div class="shot-soon"><canvas class="ico lg" data-ico="frame" aria-hidden="true"></canvas><span>Trailer</span></div>
+          <figcaption><b>Vídeo</b><span class="chip soon">EM BREVE</span></figcaption>
+        </figure>
+        <figure class="panel shot" style="margin:0">
+          <div class="shot-soon"><canvas class="ico lg" data-ico="heart" aria-hidden="true"></canvas><span>Sprites e artes</span></div>
+          <figcaption><b>Sprites</b><span class="chip soon">EM BREVE</span></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- FÓRUM -->
+    <section class="view stack" data-view="forum" aria-label="Fórum" hidden>
+      <div class="panel view-head">
+        <h2 class="h2"><canvas class="ico lg" data-ico="chat" aria-hidden="true"></canvas>Fórum</h2>
+        <p class="lead">O ponto de encontro dos jogadores ainda está sendo erguido. Estes são os tópicos planejados.</p>
+      </div>
+      <div class="panel">
+        <ul class="boards">
+          <li><canvas class="ico" data-ico="lock" aria-hidden="true"></canvas><div class="t"><strong>Anúncios</strong><span class="d">Novidades e atualizações do jogo</span></div><span class="chip soon">EM BREVE</span></li>
+          <li><canvas class="ico" data-ico="lock" aria-hidden="true"></canvas><div class="t"><strong>Dicas e estratégias</strong><span class="d">Como vencer chefes e achar segredos</span></div><span class="chip soon">EM BREVE</span></li>
+          <li><canvas class="ico" data-ico="lock" aria-hidden="true"></canvas><div class="t"><strong>Bugs e problemas</strong><span class="d">Relate o que deu errado</span></div><span class="chip soon">EM BREVE</span></li>
+          <li><canvas class="ico" data-ico="lock" aria-hidden="true"></canvas><div class="t"><strong>Sugestões</strong><span class="d">Ideias para os próximos updates</span></div><span class="chip soon">EM BREVE</span></li>
+          <li><canvas class="ico" data-ico="lock" aria-hidden="true"></canvas><div class="t"><strong>Fanarts e capturas</strong><span class="d">Mostre o que você criou</span></div><span class="chip soon">EM BREVE</span></li>
+        </ul>
+      </div>
+      <p class="panel muted">Enquanto isso, a <a href="#wiki">wiki</a> e os <a href="#comandos">comandos</a> já ajudam a começar.</p>
+    </section>
+
+    <!-- COMANDOS -->
+    <section class="view stack" data-view="comandos" aria-label="Comandos" hidden>
+      <div class="panel view-head">
+        <h2 class="h2"><canvas class="ico lg" data-ico="pad" aria-hidden="true"></canvas>Comandos</h2>
+        <p class="lead">Os controles do jogo. Aperte uma tecla do seu teclado e veja a tecla correspondente acender.</p>
+      </div>
+      <div class="grid g-cmd" id="cmds"></div>
+      <p class="panel muted">No site, o Relógio do mundo no canto da tela muda a hora do céu: dia, tarde ou noite.</p>
+    </section>
+
+    <!-- LOJA -->
+    <section class="view stack" data-view="loja" aria-label="Loja" hidden>
+      <div class="panel view-head">
+        <h2 class="h2"><canvas class="ico lg" data-ico="shirt" aria-hidden="true"></canvas>Loja</h2>
+        <p class="lead">Canecas e camisetas com a arte do Mossblade. As peças ainda estão na forja.</p>
+      </div>
+      <div class="grid g-shop">
+        <article class="panel prod">
+          <div class="prod-art"><canvas width="18" height="18" data-sprite="mug" aria-hidden="true"></canvas></div>
+          <h3 class="h3">Caneca Mossblade</h3>
+          <p class="muted">Para o café antes de entrar na floresta.</p>
+          <span class="chip soon">EM BREVE</span>
+          <button class="btn sm" type="button" disabled>Indisponível</button>
+        </article>
+        <article class="panel prod">
+          <div class="prod-art"><canvas width="18" height="18" data-sprite="shirt" aria-hidden="true"></canvas></div>
+          <h3 class="h3">Camiseta Mossblade</h3>
+          <p class="muted">Verde musgo, com a espada no peito.</p>
+          <span class="chip soon">EM BREVE</span>
+          <button class="btn sm" type="button" disabled>Indisponível</button>
+        </article>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-brand">
+      <img src="logo.png" alt="Mossblade" width="1098" height="288">
+      <button class="chest" type="button" id="chest" aria-label="Abrir o baú misterioso" aria-pressed="false">
+        <canvas width="12" height="10" aria-hidden="true"></canvas>
+        <i class="spk" style="left:-4px;top:-6px"></i><i class="spk" style="left:34px;top:-2px;animation-delay:.6s"></i><i class="spk" style="left:16px;top:-14px;animation-delay:1.2s"></i>
+      </button>
+    </div>
+    <nav aria-label="Rodapé">
+      <a href="#home">Home</a><a href="#wiki">Wiki</a><a href="#midia">Mídia</a><a href="#forum">Fórum</a><a href="#comandos">Comandos</a><a href="#loja">Loja</a>
+      <a href="http://pifatec.useconectai.com.br:2567/" target="_blank" rel="noopener">Jogar</a>
+    </nav>
+    <small>Mossblade, 2026. Um jogo 2D em pixel art 16x16.</small>
+  </div>
+</footer>
+
+<!-- Relógio do mundo -->
+<aside class="clock" id="clock" data-open="false" aria-label="Relógio do mundo">
+  <button class="clock-mini" type="button" id="clkOpen" aria-expanded="false" aria-controls="clkBody"><canvas id="clkIco" data-ico="sun" aria-hidden="true"></canvas><span id="clkMini">12:00</span><span class="sr">Abrir o relógio do mundo</span></button>
+  <div class="panel clock-body" id="clkBody">
+    <div class="clock-head"><span class="label">Relógio do mundo</span><button class="x-btn" type="button" id="clkClose" aria-label="Minimizar o relógio">_</button></div>
+    <canvas class="dial" id="dial" width="60" height="24" aria-hidden="true"></canvas>
+    <div class="clock-read"><strong id="clkTime">12:00</strong><span class="chip" id="clkPhase">DIA</span></div>
+    <input class="range" id="clkRange" type="range" min="0" max="1439" step="1" value="720" aria-label="Hora do céu">
+    <div class="tbtns" role="group" aria-label="Ir para um período">
+      <button class="tbtn" type="button" data-preset="10" aria-pressed="false"><canvas data-ico="sun" aria-hidden="true"></canvas>Dia</button>
+      <button class="tbtn" type="button" data-preset="16.5" aria-pressed="false"><canvas data-ico="dusk" aria-hidden="true"></canvas>Tarde</button>
+      <button class="tbtn" type="button" data-preset="22" aria-pressed="false"><canvas data-ico="moon" aria-hidden="true"></canvas>Noite</button>
+    </div>
+    <div class="tbtns">
+      <button class="tbtn" type="button" id="clkPlay"><canvas id="clkPlayIco" data-ico="pause" aria-hidden="true"></canvas><span id="clkPlayTxt">Pausar</span></button>
+      <button class="tbtn" type="button" id="clkSpeed">Normal</button>
+      <button class="tbtn" type="button" id="clkLocal" aria-pressed="false">Hora real</button>
+    </div>
+  </div>
+</aside>
+
+<div class="say toast" id="toast" role="status" hidden>
+  <span class="say-name" aria-hidden="true">SEGREDO!</span>
+  <p class="say-text"><span class="sr" id="toastSr"></span><span class="ghost" id="toastGhost" aria-hidden="true"></span><span id="toastTyped" aria-hidden="true"></span></p>
+  <i class="say-next" aria-hidden="true"></i>
+</div>
+
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Imagem ampliada" hidden>
+  <img id="lbImg" src="" alt="">
+  <button class="btn sm" type="button" id="lbClose">Fechar</button>
+</div>
+
+<script>
+(function(){
+'use strict';
+var $=function(s,r){return (r||document).querySelector(s)};
+var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function mk(w,h){var c=document.createElement('canvas');c.width=w;c.height=h;return c}
+function clamp(v,a,b){return v<a?a:v>b?b:v}
+
+/* ---------- Ícones pixel 8x8 ---------- */
+var PAL={k:'#0d1220',g:'#3fa23c',G:'#256b2d',l:'#8fe05a',w:'#f4f7fb',s:'#8fa3b8',o:'#f0a04b',y:'#f2d45c',r:'#d9433b',R:'#8f2430',b:'#8a5a2b',n:'#5b3a1e',p:'#7a5cc8',c:'#f4ecd0',e:'#d6d2f2'};
+var ICONS={
+ sword:['...kk...','..kwwk..','..kwsk..','..klsk..','..kwsk..','.kkyykk.','..kbbk..','..kook..'],
+ heart:['.kk..kk.','krrkkrrk','krwrrrrk','krrrrrrk','.krrrrk.','..krrk..','...kk...','........'],
+ potion:['...kk...','..kbbk..','...kk...','..kppk..','.kpwppk.','.kppppk.','.kppppk.','..kkkk..'],
+ key:['..kkkk..','.kyyyyk.','.ky..yk.','.kyyyyk.','..kyyk..','..kyykk.','..kyyk..','..kkkk..'],
+ slime:['........','..kkkk..','.kllllk.','klwlllgk','klkllklk','kllllllk','kgggggGk','.kkkkkk.'],
+ bat:['k..kk..k','kk.kk.kk','kpkppkpk','kppppppk','.kpyypk.','..kppk..','...kk...','........'],
+ stone:['..kkkk..','.kswssk.','ksrssrsk','kssssssk','ksskksk.','kssssssk','.ksskssk','kkk.kkk.'],
+ tree:['...kk...','..kggk..','.kgggGk.','..kgGk..','.kgggGGk','kgggGGGk','..kbbk..','..kbbk..'],
+ shield:['.kkkkkk.','kswsssgk','ksssgggk','ksssgggk','.ksssgk.','.ksssgk.','..kgsk..','...kk...'],
+ lock:['..kkkk..','.ks..sk.','.ks..sk.','kkkkkkkk','kyyyyyyk','kyykkyyk','kyyykyyk','kkkkkkkk'],
+ book:['.kkkkkk.','kGgggggk','kGgcccgk','kGgggggk','kGgcccgk','kGgggggk','kGccccck','.kkkkkk.'],
+ frame:['kkkkkkkk','kppppcpk','kppppppk','kpppgppk','kppgggpk','kpgggggk','kGGGGGGk','kkkkkkkk'],
+ pad:['........','kkkkkkkk','ksesesek','kkkkkkkk','kesesesk','kkkkkkkk','kseeeesk','kkkkkkkk'],
+ shirt:['.kk..kk.','kcckkcck','kcccccck','kkcccckk','.kcccck.','.kcccck.','.kcccck.','.kkkkkk.'],
+ chat:['kkkkkkkk','kcccccck','kckckcck','kcccccck','kkkkkkkk','..kcck..','...kk...','........'],
+ sun:['...yy...','.y....y.','..oyyo..','y.yyyy.y','y.yyyy.y','..oyyo..','.y....y.','...yy...'],
+ dusk:['........','o..oo..o','........','..oyyo..','.oyyyyo.','oyyyyyyo','rrrrrrrr','.R.R.R.R'],
+ moon:['..cccc..','.ccc....','ccc.....','ccc.....','ccc.....','ccc.....','.ccc....','..cccc..'],
+ play:['........','.ee.....','.eee....','.eeee...','.eeee...','.eee....','.ee.....','........'],
+ pause:['........','.ee..ee.','.ee..ee.','.ee..ee.','.ee..ee.','.ee..ee.','.ee..ee.','........'],
+ bow:['..kk....','.kbwk...','.kb.wk..','kb...wk.','kb...wk.','.kb.wk..','.kbwk...','..kk....'],
+ fish:['........','..kkkk.k','.ksssskk','kswssssk','kssssssk','.ksssskk','..kkkk.k','........'],
+ moonfish:['........','..kkkk.k','.kcccckk','kckccccK','kcccccck','.kcccckk','..kkkk.k','........'],
+ bomb:['.....oy.','....kk..','..kkkk..','.kswssk.','kssssssk','kssssssk','.kssssk.','..kkkk..'],
+ staff:['.....ror','......kr','.....kbk','....kbk.','...kbk..','..kbk...','.kbk....','kbk.....'],
+ lightstaff:['.....ycy','......ky','.....kbk','....kbk.','...kbk..','..kbk...','.kbk....','kbk.....'],
+ grim:['.kkkkkk.','kppppppk','kpRppRpk','kppRRppk','kppRRppk','kpRppRpk','kppppppk','.kkkkkk.'],
+ hook:['...kkk..','..ks.sk.','..ks..k.','...ksk..','....sk..','.k..sk..','.ks.sk..','..kkk...'],
+ beetle:['k..kk..k','.kkkkkk.','kGgggGGk','kgglggGk','kgggggGk','kGgggGGk','.kkkkkk.','k......k'],
+ npc:['..kkkk..','.kbbbbk.','.kckkck.','.kcccck.','..kkkk..','.kggggk.','kggggggk','.kk..kk.'],
+ crown:['k.k..k.k','kykkykyk','kyyyyyyk','kyryyryk','kyyyyyyk','.kkkkkk.','.kllllk.','kllllllk'],
+ cave:['..kkkk..','.kssssk.','ksskkssk','kskkkksk','kskkkksk','kskkkksk','kkkkkkkk','........'],
+ ruin:['k.k.....','kskk.k.k','kssk.ksk','kssk.ksk','kssk.ksk','ksskkksk','kssssssk','kkkkkkkk'],
+ water:['........','..ee..ee','.e..ee..','........','..ee..ee','.e..ee..','........','........']
+};
+PAL.K='#d6cca2';
+function drawGrid(ctx,grid,ox,oy){ox=ox||0;oy=oy||0;grid.forEach(function(row,y){for(var x=0;x<row.length;x++){var c=PAL[row[x]];if(c){ctx.fillStyle=c;ctx.fillRect(ox+x,oy+y,1,1)}}})}
+function paintIco(cv){var g=ICONS[cv.dataset.ico];if(!g)return;cv.width=8;cv.height=8;drawGrid(cv.getContext('2d'),g)}
+function paintIcons(root){$$('canvas[data-ico]',root).forEach(paintIco)}
+function outline(c,col){var x=c.getContext('2d'),w=c.width,h=c.height,a=x.getImageData(0,0,w,h).data,m=[];
+ function sol(i,j){return i>=0&&j>=0&&i<w&&j<h&&a[(j*w+i)*4+3]>0}
+ for(var j=0;j<h;j++)for(var i=0;i<w;i++){if(!sol(i,j)&&(sol(i-1,j)||sol(i+1,j)||sol(i,j-1)||sol(i,j+1)))m.push([i,j])}
+ x.fillStyle=col;m.forEach(function(p){x.fillRect(p[0],p[1],1,1)});return c}
+
+/* ---------- Sprites de loja ---------- */
+function shopSprite(kind,cv){
+ var x=cv.getContext('2d');function R(a,b,w,h,c){x.fillStyle=c;x.fillRect(a+1,b+1,w,h)}
+ if(kind==='mug'){
+  R(3,4,9,11,'#f4ecd0');R(3,4,9,2,'#ffffff');R(10,6,2,9,'#d6cca2');
+  R(12,6,3,2,'#d6cca2');R(14,8,1,4,'#d6cca2');R(12,12,3,2,'#d6cca2');
+  R(5,8,5,1,'#3fa23c');R(5,9,5,1,'#256b2d');R(7,7,1,5,'#8fa3b8');R(6,11,3,1,'#f2d45c');
+  R(4,2,1,1,'#aab8c8');R(7,1,1,2,'#aab8c8');R(10,2,1,1,'#aab8c8');
+ } else {
+  R(4,3,8,12,'#3fa23c');R(0,3,4,5,'#3fa23c');R(12,3,4,5,'#3fa23c');
+  R(0,6,4,2,'#2f7f33');R(12,6,4,2,'#2f7f33');R(6,3,4,2,'#256b2d');
+  R(4,12,8,3,'#36853a');R(7,6,2,5,'#dfe8f2');R(6,10,4,1,'#f2d45c');R(7,11,2,2,'#8a5a2b');R(7,5,2,1,'#8fa3b8');
+ }
+ outline(cv,'#0d1220');
+}
+
+/* ---------- Roteador (hash) ---------- */
+var VIEWS=['home','wiki','midia','forum','comandos','loja'],cur=null;
+function route(){
+ var h=(location.hash||'').replace('#','');if(VIEWS.indexOf(h)<0)h='home';
+ $$('.view').forEach(function(v){v.hidden=v.dataset.view!==h});
+ $$('[data-nav]').forEach(function(a){var on=a.dataset.nav===h;a.classList.toggle('on',on);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
+ if(cur!==null&&cur!==h)window.scrollTo(0,0);
+ var enteringHome=h==='home'&&cur!==null&&cur!=='home';
+ cur=h;
+ if(enteringHome&&lastPh)greet(lastPh);
+ dirty=true;
+}
+
+/* ---------- Ciclo do dia: paleta por hora ----------
+   Cada quadro-chave define as cores do céu (topo, meio, horizonte), das montanhas, das três
+   camadas de pinheiros (cor e brilho), das nuvens e quanto aparecem estrelas e vaga-lumes.
+   Entre dois quadros as cores são misturadas suavemente. */
+function hexA(c){return [parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)]}
+function conv(v){return typeof v==='string'?hexA(v):(Array.isArray(v)?v.map(conv):v)}
+function lerp(a,b,f){if(typeof a==='number')return a+(b-a)*f;return a.map(function(v,i){return lerp(v,b[i],f)})}
+function css(c,a){var s=Math.round(c[0])+','+Math.round(c[1])+','+Math.round(c[2]);return a==null?'rgb('+s+')':'rgba('+s+','+a+')'}
+var NIGHT={sky:['#090719','#18123f','#4a3f80'],m:['#241b55','#1b1547'],t:[['#14402a','#1f5b3a'],['#0e3020','#18482f'],['#07210f','#0f361d']],cl:'#2c2560',clA:.55,st:1,fl:1,fog:'#aad2b4',fogA:.07};
+function ext(o,p){var r={};for(var k in o)r[k]=o[k];for(k in p)r[k]=p[k];return r}
+function kf(h,o){var r={h:h};for(var k in o)r[k]=conv(o[k]);return r}
+var KF=[
+ kf(0,NIGHT),
+ kf(4.4,ext(NIGHT,{sky:['#0c0a24','#1e1848','#463c7c']})),
+ kf(5.5,{sky:['#1a1a4e','#5c4282','#d9787a'],m:['#4a3a72','#3a2d60'],t:[['#1c4a3a','#2a5e45'],['#153a2a','#204a35'],['#0b2716','#143a20']],cl:'#c47c92',clA:.8,st:.35,fl:.25,fog:'#e0b0c0',fogA:.1}),
+ kf(6.6,{sky:['#4a6ab4','#eaa2a0','#fcd08a'],m:['#9a7aa6','#76628e'],t:[['#36704a','#4e9254'],['#27583c','#3a7446'],['#143f24','#215a32']],cl:'#ffd8bc',clA:.95,st:0,fl:0,fog:'#ffe2c8',fogA:.14}),
+ kf(9,{sky:['#3f86d8','#7cc0f0','#cdeefa'],m:['#86aed0','#6496b8'],t:[['#3f8e4c','#5cb05a'],['#2e7442','#48944e'],['#1b522c','#2d6e38']],cl:'#ffffff',clA:1,st:0,fl:0,fog:'#ffffff',fogA:.1}),
+ kf(13,{sky:['#3478dc','#62b2f2','#bfe6ff'],m:['#80a8d0','#5e90b8'],t:[['#42944e','#62b85c'],['#2f7844','#4a9a50'],['#1c552d','#2f723a']],cl:'#ffffff',clA:1,st:0,fl:0,fog:'#ffffff',fogA:.08}),
+ kf(16,{sky:['#4a76c4','#8fb6dc','#f2d9a4'],m:['#8e9cb8','#6e86a0'],t:[['#4a8a42','#6aa850'],['#346e3a','#4e8a44'],['#1f4e28','#336636']],cl:'#fff0d4',clA:1,st:0,fl:0,fog:'#fff0d0',fogA:.1}),
+ kf(18,{sky:['#3b3c8c','#d4627a','#fba84e'],m:['#7c4c7c','#5c3c6a'],t:[['#3c4c3a','#5e6c42'],['#2c3c30','#465238'],['#18281c','#263a26']],cl:'#ffa070',clA:1,st:.05,fl:.1,fog:'#ffb080',fogA:.12}),
+ kf(19.3,{sky:['#1a1648','#4a2f6e','#a85a78'],m:['#3c2c62','#2c2252'],t:[['#173c2e','#22503a'],['#102e22','#1a4030'],['#081e10','#10301a']],cl:'#6a4a82',clA:.8,st:.6,fl:.7,fog:'#c0a0d0',fogA:.08}),
+ kf(20.6,NIGHT),
+ kf(24,NIGHT)
+];
+function palette(h){var i=0;while(i<KF.length-2&&h>=KF[i+1].h)i++;var a=KF[i],b=KF[i+1],f=(h-a.h)/(b.h-a.h);f=f*f*(3-2*f);var P={};for(var k in a)if(k!=='h')P[k]=lerp(a[k],b[k],f);return P}
+function skyCol(P,s){return s<0.55?lerp(P.sky[0],P.sky[1],s/0.55):lerp(P.sky[1],P.sky[2],(s-0.55)/0.45)}
+/* Sol e lua cruzam o céu da direita para a esquerda; p vai de 0 (nasce) a 1 (se põe). */
+function sunAt(h){var p=(h-5.6)/13.3;return p>0&&p<1?{p:p,e:Math.sin(p*Math.PI)}:null}
+function moonAt(h){var p=(((h-18.4)%24)+24)%24/11.8;return p<1?{p:p,e:Math.sin(p*Math.PI)}:null}
+var SUNLO=[255,138,60],SUNHI=[255,246,200],LAMP=[255,212,106],ORANGE=[240,160,75],BLACK=[0,0,0];
+
+/* ---------- Cena de fundo ---------- */
+var bg=$('#bg'),bx=bg.getContext('2d'),S=4,W=0,H=0,stars=[],flies=[],lay=[],clouds=[],birds=[],shoot=null,nextShoot=4,nextBirds=3,lastP=null;
+var cB,cS,cBt,cSt;
+function discC(c,cx,cy,R,col){c.fillStyle=col;for(var dy=-R;dy<=R;dy++){var half=Math.floor(Math.sqrt(R*R+R*0.7-dy*dy));c.fillRect(cx-half,cy+dy,half*2+1,1)}}
+function mount(seed,y,mh,amp,pad){
+ var r=mulberry(seed),cv=mk(W+40,mh+pad),c=cv.getContext('2d'),ph=r()*6,ph2=r()*6,hs=[];c.fillStyle='#fff';
+ for(var x=0;x<cv.width;x++){var t=mh*0.55+Math.sin(x*0.045+ph)*amp+Math.sin(x*0.12+ph2)*amp*0.4+(r()<0.1?-1:0);t=Math.max(0,Math.round(t/2)*2)+pad;hs.push(t);c.fillRect(x,t,1,cv.height-t)}
+ return {cv:cv,y:y-pad,hs:hs,f:0}
+}
+function trees(seed,y,minH,maxH,gap,f){
+ var r=mulberry(seed),ch=maxH+4,cv=mk(W+40,ch),hi=mk(W+40,ch),c=cv.getContext('2d'),ch2=hi.getContext('2d'),x=-2;c.fillStyle=ch2.fillStyle='#fff';
+ while(x<cv.width+4){
+  var h=minH+Math.floor(r()*(maxH-minH+1)),hw=Math.max(3,Math.round(h*0.34)),th=Math.ceil(h/3),top=ch-3-h;
+  for(var rr=0;rr<h;rr++){var t=Math.floor(rr/th),ri=rr%th,half=Math.max(0,Math.round(hw*(0.5+0.25*t)*(ri+1)/th));
+   c.fillRect(x-half,top+rr,half*2+1,1);
+   if(half>0&&ri%2===0)ch2.fillRect(x-half,top+rr,1,1)}
+  c.fillRect(x,ch-3,1,3);
+  x+=Math.max(4,Math.round(gap*(0.7+r()*0.6)));
+ }
+ return {cv:cv,hi:hi,y:y-ch,f:f,tree:true}
+}
+/* Castelo distante sobre a primeira cordilheira; janelas acendem à noite. */
+function castle(L,cx){
+ var c=L.cv.getContext('2d'),X=cx+20,by=L.hs[clamp(X,0,L.hs.length-1)]+3;c.fillStyle='#fff';
+ function R(a,b,w,h){c.fillRect(X+a,by+b,w,h)}
+ function roof(x0,yb,half,hh){for(var i=0;i<hh;i++){var w=Math.round(half*(1-i/hh));c.fillRect(X+x0-w,by+yb-1-i,w*2+1,1)}}
+ R(-9,-9,19,60);for(var k=-9;k<=9;k+=2)R(k,-10,1,1);
+ R(-4,-19,9,10);roof(0,-19,5,7);
+ R(-13,-14,5,60);roof(-11,-14,3,5);R(9,-14,5,60);roof(11,-14,3,5);
+ R(0,-31,1,6);
+ L.castle={x:cx,by:by};
+}
+var WIN=[[-2,-16],[2,-16],[-11,-11],[11,-11],[-6,-6],[6,-6]];
+function cloudShape(r){
+ var w=18+Math.floor(r()*26),h=7+Math.floor(r()*5),b=mk(w,h),s=mk(w,h),bc=b.getContext('2d'),sc=s.getContext('2d'),n=2+Math.floor(r()*3);
+ bc.fillStyle='#fff';bc.fillRect(2,h-3,w-4,3);
+ for(var i=0;i<n;i++){var R=Math.round(1.5+r()*((h-2)/1.6-1.5)),cx=Math.round(R+2+r()*(w-2*R-4));discC(bc,cx,Math.round(h-2-R*0.7),R,'#fff')}
+ sc.drawImage(b,0,0);sc.globalCompositeOperation='source-in';sc.fillStyle='#fff';sc.fillRect(0,h-2,w,2);
+ return {b:b,s:s,w:w}
+}
+function buildBg(){
+ S=innerWidth<700?3:4;W=Math.ceil(innerWidth/S);H=Math.ceil(innerHeight/S);bg.width=W;bg.height=H;
+ var r=mulberry(11),n=Math.floor(W*H/120),i;stars=[];
+ for(i=0;i<n;i++)stars.push({x:Math.floor(r()*W),y:Math.floor(r()*H*0.62),p:r()*6.28,k:r()<0.13?2:0});
+ flies=[];var fc=W<200?9:18;for(i=0;i<fc;i++)flies.push({x:r()*W,y:H*(0.6+r()*0.38),a:r()*6.28,s:6+r()*8,p:r()*6.28,bf:i%2===0,c:['#f4f7fb','#f2d45c','#f0a0c0','#a0d8ff'][i%4]});
+ lay=[mount(3,Math.round(H*0.50),Math.round(H*0.24),7,40),mount(5,Math.round(H*0.58),Math.round(H*0.22),6,0),
+  trees(21,Math.round(H*0.80),Math.round(H*0.10),Math.round(H*0.17),7,0.012),
+  trees(33,Math.round(H*0.90),Math.round(H*0.13),Math.round(H*0.22),9,0.03),
+  trees(47,H+2,Math.round(H*0.16),Math.round(H*0.28),11,0.06)];
+ lay.forEach(function(L,k){L.k=k<2?k:k-2});
+ castle(lay[0],Math.round(W*(W<200?0.16:0.12)));
+ var cr=mulberry(77),cn=Math.max(3,Math.round(W/60));clouds=[];
+ for(i=0;i<cn;i++){var sh=cloudShape(cr);sh.x=cr()*(W+40)-20;sh.y=Math.round(H*(0.05+cr()*0.33));sh.v=1.5+cr()*2.5;clouds.push(sh)}
+ var ch=Math.round(H*0.5);cB=mk(W,ch);cS=mk(W,ch);cBt=mk(W,ch);cSt=mk(W,ch);
+ birds=[];
+}
+/* Pinta uma máscara branca com a cor da hora atual (cache por camada). */
+function tint(L,mask,col,key){var c=L[key]||(L[key]=mk(mask.width,mask.height)),x=c.getContext('2d');
+ x.globalCompositeOperation='copy';x.drawImage(mask,0,0);x.globalCompositeOperation='source-in';x.fillStyle=col;x.fillRect(0,0,c.width,c.height);x.globalCompositeOperation='source-over';return c}
+function recolor(src,dst,col){var x=dst.getContext('2d');x.globalCompositeOperation='copy';x.drawImage(src,0,0);x.globalCompositeOperation='source-in';x.fillStyle=col;x.fillRect(0,0,dst.width,dst.height);x.globalCompositeOperation='source-over';return dst}
+
+function drawBg(t){
+ if(!W)return;
+ var h=sky.h,P=palette(h),i,x;lastP=P;
+ var sy=window.scrollY||0,N=16,skyH=Math.ceil(H*0.82),bh=Math.ceil(skyH/N),cols=[];
+ for(i=0;i<N;i++)cols.push(css(skyCol(P,i/(N-1))));
+ for(i=0;i<N;i++){bx.fillStyle=cols[i];bx.fillRect(0,i*bh,W,i===N-1?H:bh)}
+ for(i=0;i<N-1;i++){bx.fillStyle=cols[i+1];var yy=(i+1)*bh-1;for(x=i&1;x<W;x+=2)bx.fillRect(x,yy,1,1)}
+ // estrelas e estrela cadente
+ if(P.st>0.01){bx.globalAlpha=P.st;
+  for(i=0;i<stars.length;i++){var s=stars[i],v=Math.sin(t*1.6+s.p);
+   bx.fillStyle=v>0.55?'#ffffff':(v>-0.35?'#b9b4e8':'#5d578f');bx.fillRect(s.x,s.y,1,1);
+   if(s.k&&v>0.2){bx.fillStyle='#d9d4ff';bx.fillRect(s.x-1,s.y,3,1);bx.fillRect(s.x,s.y-1,1,3)}}
+  if(shoot){var q=shoot;for(i=0;i<8;i++){bx.fillStyle=i<2?'#ffffff':(i<5?'#b9b4e8':'#5d578f');bx.fillRect(Math.round(q.x-i*1.4),Math.round(q.y-i*0.7),1,1)}}
+  bx.globalAlpha=1}
+ // sol e lua
+ var hz=Math.round(H*0.66),top=Math.round(H*0.12),su=sunAt(h),mo=moonAt(h);
+ if(su){var sr=Math.max(6,Math.round(Math.min(W,H)*0.05)),sx=Math.round(W*(0.94-0.88*su.p)),sY=Math.round(hz-su.e*(hz-top)),sc=lerp(SUNLO,SUNHI,clamp(su.e*1.8,0,1));
+  if(su.e<0.4){var ga=(1-su.e/0.4)*0.22;for(i=0;i<5;i++){bx.fillStyle=css(sc,ga*(i+1)/10);bx.fillRect(0,hz-(5-i)*7,W,7)}discC(bx,sx,sY,sr*3,css(sc,ga*0.45))}
+  discC(bx,sx,sY,sr+6,css(sc,0.07));discC(bx,sx,sY,sr+3,css(sc,0.14));discC(bx,sx,sY,sr,css(sc));
+  discC(bx,sx-Math.round(sr*0.3),sY-Math.round(sr*0.3),Math.max(1,Math.round(sr*0.35)),'rgba(255,255,255,0.35)')}
+ if(mo){var mr=Math.max(9,Math.round(Math.min(W,H)*0.07)),mx=Math.round(W*(0.94-0.88*mo.p)),my=Math.round(hz-mo.e*(hz-top)+Math.sin(t*0.6));
+  discC(bx,mx,my,mr+5,'rgba(244,236,208,0.07)');discC(bx,mx,my,mr+2,'rgba(244,236,208,0.10)');discC(bx,mx,my,mr,'#f4ecd0');
+  discC(bx,mx+Math.round(mr*0.3),my-Math.round(mr*0.35),Math.max(1,Math.round(mr*0.22)),'#d6cca2');discC(bx,mx-Math.round(mr*0.4),my+Math.round(mr*0.3),Math.max(1,Math.round(mr*0.28)),'#d6cca2')}
+ // nuvens
+ var cbx=cB.getContext('2d'),csx=cS.getContext('2d');cbx.clearRect(0,0,W,cB.height);csx.clearRect(0,0,W,cS.height);
+ clouds.forEach(function(c){var px=Math.round(c.x);cbx.drawImage(c.b,px,c.y);csx.drawImage(c.s,px,c.y)});
+ bx.globalAlpha=P.clA;bx.drawImage(recolor(cB,cBt,css(P.cl)),0,0);bx.drawImage(recolor(cS,cSt,css(lerp(P.cl,P.sky[0],0.4))),0,0);bx.globalAlpha=1;
+ // pássaros (de dia)
+ if(birds.length){bx.fillStyle=css(lerp(P.m[1],[16,14,40],0.55));
+  birds.forEach(function(b){var bxp=Math.round(b.x),byp=Math.round(b.y),up=Math.sin(t*10+b.p)>0;bx.fillRect(bxp,byp,1,1);
+   if(up){bx.fillRect(bxp-1,byp-1,1,1);bx.fillRect(bxp+1,byp-1,1,1);bx.fillRect(bxp-2,byp-2,1,1);bx.fillRect(bxp+2,byp-2,1,1)}
+   else{bx.fillRect(bxp-1,byp-1,1,1);bx.fillRect(bxp+1,byp-1,1,1);bx.fillRect(bxp-2,byp,1,1);bx.fillRect(bxp+2,byp,1,1)}})}
+ // montanhas, castelo, pinheiros e névoa
+ for(i=0;i<lay.length;i++){var L=lay[i],off=-Math.min(10,Math.round(sy/S*L.f)),base=L.tree?P.t[L.k][0]:P.m[L.k];
+  bx.drawImage(tint(L,L.cv,css(base),'_b'),-20,L.y+off);
+  if(L.hi)bx.drawImage(tint(L,L.hi,css(P.t[L.k][1]),'_h'),-20,L.y+off);
+  bx.fillStyle=css(base);bx.fillRect(0,L.y+off+L.cv.height,W,H);
+  if(L.castle){var cx=L.castle.x,cy=L.y+off+L.castle.by,dark=lerp(base,BLACK,0.35);
+   bx.fillStyle=css(lerp(base,BLACK,0.5));bx.fillRect(cx-1,cy-4,3,4);
+   WIN.forEach(function(w,k){var on=Math.sin(t*0.7+k*1.9)>-0.8?1:0.35;bx.fillStyle=css(lerp(dark,LAMP,P.st*on));bx.fillRect(cx+w[0],cy+w[1],1,2)});
+   var fw=Math.floor(t*3)%2;bx.fillStyle=css(lerp(ORANGE,base,0.15+0.4*P.st));bx.fillRect(cx+1,cy-31,fw?4:3,1);bx.fillRect(cx+1,cy-30,fw?3:4,1)}
+  if(i===3){for(var m=0;m<4;m++){var mxw=((t*(2+m*0.7)+m*97)%(W+120))-60;bx.fillStyle=css(P.fog,P.fogA);bx.fillRect(Math.round(mxw),Math.round(H*(0.74+m*0.05)),56,2)}}}
+ // vaga-lumes (noite) e borboletas (dia)
+ var day=su?clamp(su.e*3,0,1)*(1-P.fl):0;
+ for(i=0;i<flies.length;i++){var f=flies[i],px=Math.round(f.x),py=Math.round(f.y);
+  if(P.fl>0.02){var b=Math.sin(t*2+f.p);if(b>0){bx.globalAlpha=P.fl;
+   if(b>0.7){bx.fillStyle='rgba(246,240,138,0.30)';bx.fillRect(px-1,py,3,1);bx.fillRect(px,py-1,1,3)}
+   bx.fillStyle='#f6f08a';bx.fillRect(px,py,1,1);bx.globalAlpha=1}}
+  if(f.bf&&day>0.02){bx.globalAlpha=day;bx.fillStyle=f.c;
+   if(Math.sin(t*14+f.p)>0){bx.fillRect(px-1,py,1,1);bx.fillRect(px+1,py,1,1)}else{bx.fillRect(px-1,py-1,1,1);bx.fillRect(px+1,py-1,1,1)}
+   bx.fillStyle='#1a1a2e';bx.fillRect(px,py,1,1);bx.globalAlpha=1}}
+}
+function stepBg(dt,t){
+ var P=lastP||palette(sky.h),su=sunAt(sky.h);
+ for(var i=0;i<flies.length;i++){var f=flies[i];f.a+=(Math.random()-0.5)*0.5;f.x+=Math.cos(f.a)*f.s*dt;f.y+=Math.sin(f.a)*f.s*dt*0.7;
+  if(f.x<-2)f.x=W+2;if(f.x>W+2)f.x=-2;if(f.y<H*0.55)f.y=H*0.55;if(f.y>H-2)f.y=H*0.6}
+ clouds.forEach(function(c){c.x+=c.v*dt;if(c.x>W+4)c.x=-c.w-4});
+ if(shoot){shoot.x+=shoot.vx*dt;shoot.y+=shoot.vy*dt;if(shoot.x>W+10||shoot.y>H*0.6)shoot=null}
+ else if(t>nextShoot){if(P.st>0.6)shoot={x:Math.random()*W*0.5,y:Math.random()*H*0.25,vx:70,vy:35};nextShoot=t+9+Math.random()*8}
+ birds.forEach(function(b){b.x+=b.vx*dt});birds=birds.filter(function(b){return b.x>-30&&b.x<W+30});
+ if(!birds.length&&t>nextBirds){
+  if(su&&su.e>0.3){var n=3+Math.floor(Math.random()*3),dir=Math.random()<0.5?1:-1,x0=dir>0?-8:W+8,y0=H*(0.14+Math.random()*0.2),vx=dir*(12+Math.random()*6);
+   for(var k=0;k<n;k++){var o=Math.ceil(k/2),sd=k%2?1:-1;birds.push({x:x0-dir*o*6,y:y0+sd*o*3,vx:vx,p:Math.random()*6})}}
+  nextBirds=t+12+Math.random()*12}
+}
+
+/* ---------- Relógio do mundo (estado e controles) ---------- */
+var SKEY='mossblade-ceu',SPEEDS={lento:720,normal:240,rapido:45},SP_ORDER=['lento','normal','rapido'],
+ SP_LABEL={lento:'Lento',normal:'Normal',rapido:'Rápido'},SP_DESC={lento:'um dia dura 12 minutos',normal:'um dia dura 4 minutos',rapido:'um dia dura 45 segundos'};
+function nowH(){var d=new Date();return d.getHours()+d.getMinutes()/60+d.getSeconds()/3600}
+var sky={h:nowH(),play:!reduce,speed:'normal',local:false,open:false,sel:null},glide=null,dirty=true;
+try{var sv=JSON.parse(localStorage.getItem(SKEY)||'null');
+ if(sv){if(SPEEDS[sv.speed])sky.speed=sv.speed;sky.local=!!sv.local;sky.play=!!sv.play;sky.open=!!sv.open;
+  if(!sky.local&&typeof sv.h==='number'&&isFinite(sv.h))sky.h=((sv.h%24)+24)%24;
+  sky.sel=sv.sel==null?null:+sv.sel;
+  if(sv.glideTo!=null&&!sky.local){sky.h=((+sv.glideTo%24)+24)%24}}}catch(e){}
+/* Salva tudo: hora atual, tocando/pausado, velocidade, hora real, período escolhido e relógio aberto.
+   Se uma transição estiver no meio, guarda o destino para não parar a meio caminho. */
+var lastSave=0;
+function save(){try{localStorage.setItem(SKEY,JSON.stringify({h:sky.h,play:sky.play,speed:sky.speed,local:sky.local,open:sky.open,sel:sky.sel,glideTo:glide?glide.b:null}))}catch(e){}}
+function advance(dt){
+ if(glide){glide.t+=dt;var k=Math.min(1,glide.t/glide.d),e=k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2;sky.h=(glide.a+glide.span*e)%24;
+  if(k>=1){sky.h=glide.b;var done=glide.done;glide=null;if(done)done()}}
+ else if(sky.local)sky.h=nowH();
+ else if(sky.play)sky.h=(sky.h+dt*24/SPEEDS[sky.speed])%24;
+}
+/* Avança o tempo até a hora pedida, sempre para a frente, como o céu girando. */
+function goTo(target,done,span,dur){
+ target=((target%24)+24)%24;
+ if(span==null)span=((target-sky.h)%24+24)%24;
+ if(reduce||span<0.01){glide=null;sky.h=target;dirty=true;if(done)done();return}
+ glide={a:sky.h,b:target,span:span,t:0,d:dur||0.6+span/24*2.6,done:done};
+}
+var clockEl=$('#clock'),clkRange=$('#clkRange'),dial=$('#dial'),dc=dial.getContext('2d');
+function pad2(n){return(n<10?'0':'')+n}
+function syncCtl(){
+ var playing=sky.play&&!sky.local,ic=$('#clkPlayIco');
+ ic.dataset.ico=playing?'pause':'play';paintIco(ic);$('#clkPlayTxt').textContent=playing?'Pausar':'Tocar';
+ $('#clkPlay').setAttribute('aria-label',(playing?'Pausar':'Tocar')+' o ciclo do dia');
+ var sp=$('#clkSpeed');sp.textContent=SP_LABEL[sky.speed];sp.setAttribute('aria-label','Velocidade: '+SP_LABEL[sky.speed]+', '+SP_DESC[sky.speed]);
+ $('#clkLocal').setAttribute('aria-pressed',String(sky.local));
+ $$('[data-preset]').forEach(function(b){b.setAttribute('aria-pressed',String(!sky.local&&!sky.play&&sky.sel===+b.dataset.preset))});
+}
+function setOpen(o,focus){sky.open=o;clockEl.dataset.open=String(o);$('#clkOpen').setAttribute('aria-expanded',String(o));if(o)drawDial();save();
+ if(focus)(o?$('#clkClose'):$('#clkOpen')).focus()}
+$('#clkOpen').addEventListener('click',function(){setOpen(true,true)});
+$('#clkClose').addEventListener('click',function(){setOpen(false,true)});
+$$('[data-preset]').forEach(function(b){b.addEventListener('click',function(){
+ var v=+b.dataset.preset;sky.local=false;sky.play=false;sky.sel=v;goTo(v);syncCtl();save()})});
+clkRange.addEventListener('input',function(){glide=null;sky.local=false;sky.play=false;sky.sel=null;sky.h=+clkRange.value/60;dirty=true;syncCtl()});
+clkRange.addEventListener('change',save);
+$('#clkPlay').addEventListener('click',function(){glide=null;if(sky.local){sky.local=false;sky.play=true}else sky.play=!sky.play;sky.sel=null;syncCtl();save()});
+$('#clkSpeed').addEventListener('click',function(){sky.speed=SP_ORDER[(SP_ORDER.indexOf(sky.speed)+1)%3];if(sky.local)sky.local=false;sky.play=true;sky.sel=null;glide=null;syncCtl();save()});
+$('#clkLocal').addEventListener('click',function(){
+ if(sky.local){sky.local=false;sky.play=false;sky.sel=null}else{sky.local=true;sky.sel=null;goTo(nowH())}
+ syncCtl();save()});
+addEventListener('pagehide',save);addEventListener('beforeunload',save);
+document.addEventListener('visibilitychange',function(){if(document.hidden)save()});
+
+/* Mostrador: mini cena com o arco do sol e da lua. */
+var DST=[[5,3],[14,7],[22,2],[38,5],[47,9],[55,3],[30,11],[9,12]];
+function drawDial(){
+ var P=lastP;if(!P)return;var h=sky.h,i,x,y;
+ for(i=0;i<8;i++){dc.fillStyle=css(skyCol(P,i/7));dc.fillRect(0,i*3,60,3)}
+ if(P.st>0.02){dc.globalAlpha=P.st;dc.fillStyle='#fff';DST.forEach(function(p){dc.fillRect(p[0],p[1],1,1)});dc.globalAlpha=1}
+ dc.fillStyle='rgba(255,255,255,0.4)';for(i=0;i<=14;i++){var q=i/14;dc.fillRect(Math.round(54-48*q),Math.round(19-Math.sin(q*Math.PI)*15),1,1)}
+ var su=sunAt(h),mo=moonAt(h);
+ if(su){x=Math.round(54-48*su.p);y=Math.round(19-su.e*15);discC(dc,x,y,4,css(lerp(SUNLO,SUNHI,clamp(su.e*1.8,0,1)),0.25));discC(dc,x,y,2,css(lerp(SUNLO,SUNHI,clamp(su.e*1.8,0,1))))}
+ if(mo){x=Math.round(54-48*mo.p);y=Math.round(19-mo.e*15);discC(dc,x,y,4,'rgba(244,236,208,0.18)');discC(dc,x,y,2,'#f4ecd0');dc.fillStyle='#d6cca2';dc.fillRect(x+1,y-1,1,1)}
+ dc.fillStyle=css(P.m[1]);for(x=0;x<60;x++){y=19+Math.round(Math.sin(x*0.25)*1.5+Math.sin(x*0.6+1));dc.fillRect(x,y,1,24-y)}
+ dc.fillStyle=css(P.t[2][0]);for(x=0;x<60;x+=5){dc.fillRect(x+2,19,1,1);dc.fillRect(x+1,20,3,1)}dc.fillRect(0,21,60,3);
+}
+var PH={amanhecer:{n:'AMANHECER',c:'#f2a0b0',i:'dusk'},dia:{n:'DIA',c:'#4fb83a',i:'sun'},tarde:{n:'TARDE',c:'#f0a04b',i:'dusk'},anoitecer:{n:'ANOITECER',c:'#b39cf0',i:'moon'},noite:{n:'NOITE',c:'#aab8c8',i:'moon'}};
+function phaseOf(h){return h>=4.6&&h<7?'amanhecer':h>=7&&h<15.5?'dia':h>=15.5&&h<18.2?'tarde':h>=18.2&&h<19.9?'anoitecer':'noite'}
+var lastMin=-1,lastPh='';
+function ui(){
+ var m=Math.floor(sky.h*60)%1440;
+ if(m!==lastMin){lastMin=m;var s=pad2(Math.floor(m/60))+':'+pad2(m%60);$('#clkTime').textContent=s;$('#clkMini').textContent=s;clkRange.value=m;clkRange.setAttribute('aria-valuetext',s)}
+ var ph=phaseOf(sky.h);
+ if(ph!==lastPh){lastPh=ph;var d=PH[ph],chip=$('#clkPhase');chip.textContent=d.n;chip.style.background=d.c;var ic=$('#clkIco');ic.dataset.ico=d.i;paintIco(ic);greet(ph)}
+ if(sky.open)drawDial();
+}
+
+/* ---------- Fala do Eremita (muda com a hora) ---------- */
+var GREET={
+ amanhecer:'O sol nasce atrás das montanhas, viajante. Boa hora para afiar a espada e partir.',
+ dia:'Bom dia, viajante! A Clareira está cheia de vida. E de gelecas, cuidado onde pisa.',
+ tarde:'Boa tarde, viajante. O sol baixa sobre o Lago das Garças e as sombras dos pinheiros crescem.',
+ anoitecer:'O céu pega fogo no horizonte. Logo as janelas do castelo vão se acender.',
+ noite:'Boa noite, viajante. Dizem que o Peixe-lua só morde a isca sob esta lua. Leve sua vara.'
+};
+function typer(root,txt,instant){
+ var box=root.el,typed=root.typed;clearInterval(root.iv);root.sr.textContent=txt;root.ghost.textContent=txt;
+ if(instant||reduce){typed.textContent=txt;box.classList.remove('typing');return}
+ var i=0;typed.textContent='';box.classList.add('typing');
+ root.iv=setInterval(function(){i++;typed.textContent=txt.slice(0,i);if(i>=txt.length){clearInterval(root.iv);box.classList.remove('typing')}},28);
+}
+function skipType(root){clearInterval(root.iv);root.typed.textContent=root.ghost.textContent;root.el.classList.remove('typing')}
+var SAY={el:$('#say'),sr:$('#saySr'),ghost:$('#sayGhost'),typed:$('#sayTyped')};
+function greet(ph){typer(SAY,GREET[ph],cur!=='home')}
+SAY.el.addEventListener('click',function(){skipType(SAY)});
+
+/* ---------- Baú secreto do rodapé ---------- */
+var CHEST=['.kkkkkkkkkk.','kbbbbbbbbbbk','kbnbbbbbbnbk','kkkkkyykkkkk','kbbbbyybbbbk','kbnbbkkbbnbk','kbbbbbbbbbbk','kbnbbbbbbnbk','kbbbbbbbbbbk','kkkkkkkkkkkk'];
+var CHEST_O=['.kkkkkkkkkk.','kbnbbbbbbnbk','kkkkkkkkkkkk','kwyyyyyyyywk','kkkkkyykkkkk','kbbbbyybbbbk','kbnbbkkbbnbk','kbbbbbbbbbbk','kbnbbbbbbnbk','kkkkkkkkkkkk'];
+var chestBtn=$('#chest'),chestCv=$('canvas',chestBtn),chestX=chestCv.getContext('2d'),toast=$('#toast'),toastHide=null;
+var TOAST={el:toast,sr:$('#toastSr'),ghost:$('#toastGhost'),typed:$('#toastTyped')};
+function drawChest(open){chestX.clearRect(0,0,12,10);drawGrid(chestX,open?CHEST_O:CHEST)}
+function chime(){try{var A=window.AudioContext||window.webkitAudioContext;if(!A)return;var ac=chime.ac||(chime.ac=new A()),t0=ac.currentTime+0.03;
+ [523.25,659.25,783.99,987.77,1046.5,1318.5].forEach(function(f,i){var o=ac.createOscillator(),g=ac.createGain(),s=t0+i*0.085;o.type='square';o.frequency.value=f;
+  g.gain.setValueAtTime(0.0001,s);g.gain.linearRampToValueAtTime(0.05,s+0.01);g.gain.exponentialRampToValueAtTime(0.0001,s+0.4);o.connect(g);g.connect(ac.destination);o.start(s);o.stop(s+0.45)})}catch(e){}}
+function hideToast(){toast.hidden=true;clearTimeout(toastHide)}
+chestBtn.addEventListener('click',function(){
+ var open=!chestBtn.classList.contains('open');chestBtn.classList.toggle('open',open);chestBtn.setAttribute('aria-pressed',String(open));drawChest(open);
+ if(!open){hideToast();return}
+ chime();toast.hidden=false;
+ typer(TOAST,reduce?'Você encontrou a Ampulheta de Musgo! Dizem que ela guarda o tempo da floresta.':'Você encontrou a Ampulheta de Musgo! Veja: o tempo gira ao seu redor…');
+ if(!reduce&&!glide){var back=sky.h;goTo(back,null,24,6)}
+ clearTimeout(toastHide);toastHide=setTimeout(hideToast,8000);
+});
+toast.addEventListener('click',hideToast);
+
+/* ---------- Laço principal ---------- */
+var last=0,lastBg=0;
+function tick(ts){
+ var dt=Math.min(0.1,(ts-last)/1000||0.016);last=ts;var t=ts/1000,before=sky.h;
+ advance(dt);
+ var changed=sky.h!==before;
+ if(ts-lastSave>1000){lastSave=ts;save()}
+ if(reduce){if(changed||dirty){drawBg(0);dirty=false;ui()}}
+ else if(ts-lastBg>33||dirty){stepBg(Math.min(0.1,(ts-lastBg)/1000),t);drawBg(t);lastBg=ts;dirty=false;ui()}
+ requestAnimationFrame(tick);
+}
+
+/* ---------- Wiki ---------- */
+var WIKI=[
+ {cat:'Itens',icon:'sword',name:'Espada curta',sum:'A primeira arma do herói, no botão A.',facts:[['Tipo','Arma corpo a corpo'],['Botão','A (J, Z, Espaço ou clique esquerdo)'],['Especial','Segure até brilhar e solte: giro da espada']],text:'Uma espada simples que parece mais uma faca velha! Mesmo assim, é com ela que toda aventura começa.'},
+ {cat:'Itens',icon:'bow',name:'Arco',sum:'Ataque à distância, no botão C.',facts:[['Tipo','Arma à distância'],['Botão','C (L, C ou clique direito)'],['Mira','Segue o cursor do mouse']],text:'Com o mouse sobre a tela, as flechas vão para onde o cursor aponta. No celular, a ajuda na mira escolhe o inimigo mais perto à sua frente.'},
+ {cat:'Itens',icon:'hook',name:'Gancho',sum:'Corrente que puxa você até pilares.',facts:[['Tipo','Ferramenta'],['Uso','Atravessar água e buracos'],['Extra','Atordoa monstros e traz itens']],text:'Atira uma corrente na mira: prende em pilares e puxa você até lá, por cima de água e buracos.'},
+ {cat:'Itens',icon:'staff',name:'Cajado de Fogo',sum:'Bola de fogo na mira.',facts:[['Tipo','Magia'],['Custo','Mana'],['Especial','Segure e solte: explosão']],text:'Sem mana, o cajado vira um simples bastão. Tenha poções de mana por perto.'},
+ {cat:'Itens',icon:'lightstaff',name:'Cajado de Luz',sum:'Cura você e quem estiver perto.',facts:[['Tipo','Magia de cura'],['Custo','Mana'],['Especial','Segure e solte: cura maior que empurra monstros']],text:'O melhor amigo de um grupo. Fique no meio dos aliados na hora de soltar.'},
+ {cat:'Itens',icon:'grim',name:'Grimório Sombrio',sum:'Sombra que deixa o alvo lento e rouba vida.',facts:[['Tipo','Magia sombria'],['Custo','Mana'],['Especial','Segure e solte: maldição']],text:'Ótimo contra inimigos rápidos: lentos, eles viram alvo fácil para a espada.'},
+ {cat:'Itens',icon:'bomb',name:'Bomba',sum:'Abre paredes rachadas.',facts:[['Tecla','3 põe uma acesa'],['Arremessar','E levanta, E de novo arremessa']],text:'Procure rachaduras nas paredes: quase sempre escondem uma passagem.'},
+ {cat:'Itens',icon:'heart',name:'Coração',sum:'Recupera 25 de vida.',facts:[['Tecla','1'],['Efeito','+25 de vida']],text:'Guarde alguns para as lutas mais duras.'},
+ {cat:'Itens',icon:'potion',name:'Poção de mana',sum:'Recupera 20 de mana.',facts:[['Tecla','2'],['Efeito','+20 de mana']],text:'Indispensável para quem usa cajados e o grimório.'},
+ {cat:'Inimigos',icon:'slime',name:'Geleca',sum:'Monstro gelatinoso que vem em bando.',facts:[['Deixa cair','Geleia de geleca'],['Perigo','Invasões de gelecas']],text:'Às vezes uma invasão de gelecas toma o mapa. Junte o grupo e segure a linha.'},
+ {cat:'Inimigos',icon:'beetle',name:'Besouro-guarda',sum:'Patrulha a praça e procura quem some.',facts:[['Deixa cair','Carapaça de besouro'],['Dica','Arremesse pedras pesadas nele']],text:'Se um besouro-guarda te perder de vista, vai procurar. Uma pedra pesada arremessada derruba mais rápido que a espada.'},
+ {cat:'Inimigos',icon:'crown',name:'Rei Geleca',sum:'O chefe das gelecas.',facts:[['Tipo','Chefe'],['Vida','Barra própria no topo da tela']],text:'Quando ele aparece, a barra de vida dele surge no alto da tela. Melhor enfrentar em grupo.'},
+ {cat:'Locais',icon:'tree',name:'Clareira',sum:'Onde a jornada começa.',facts:[['Tipo','Área inicial'],['Perigo','Baixo']],text:'Grama, flores e arbustos para levantar e arremessar.'},
+ {cat:'Locais',icon:'tree',name:'Bosque Fechado',sum:'Árvores densas e trilhas estreitas.',facts:[['Tipo','Floresta'],['Dica','Use o mapa (M)']],text:'O mapa se revela conforme você explora.'},
+ {cat:'Locais',icon:'water',name:'Margem do Rio',sum:'Água corrente e bons pontos de pesca.',facts:[['Peixes','Lambari, Tilápia'],['Dica','O gancho cruza a água']],text:'De frente para a água, E ou F lança a linha.'},
+ {cat:'Locais',icon:'water',name:'Lago das Garças',sum:'Águas calmas, peixes raros.',facts:[['Tipo','Lago'],['Raridade','Truta dourada']],text:'Volte à noite: tem peixe que só aparece sob a lua.'},
+ {cat:'Locais',icon:'ruin',name:'Ruínas de Aurel',sum:'Pedras antigas cheias de segredos.',facts:[['Tipo','Ruínas'],['Quem visita','Arqueóloga Lia']],text:'Placas de pressão, pilares e paredes rachadas. Leve bombas.'},
+ {cat:'Locais',icon:'cave',name:'Caverna Funda',sum:'Escuridão e o Peixe-cego.',facts:[['Entrada','No paredão'],['Peixe','Peixe-cego']],text:'Leve uma tocha. A entrada no paredão leva até ela.'},
+ {cat:'Personagens',icon:'npc',name:'Velho Tomé',sum:'Morador antigo, conhece a região.',facts:[['Tipo','NPC'],['Ação','E para conversar']],text:'Converse com ele quando não souber para onde ir.'},
+ {cat:'Personagens',icon:'npc',name:'Mercadora Rosa',sum:'Compra e vende itens.',facts:[['Tipo','Mercadora'],['Ações','Comprar e vender']],text:'Troque o ouro das aventuras por corações, poções e bombas.'},
+ {cat:'Personagens',icon:'npc',name:'Arqueóloga Lia',sum:'Estuda as Ruínas de Aurel.',facts:[['Tipo','NPC'],['Onde','Perto das ruínas']],text:'Ela sabe mais sobre o passado de Aurel do que conta de primeira.'},
+ {cat:'Mecânicas',icon:'moonfish',name:'Pesca',sum:'Seis peixes, um deles só à noite.',facts:[['Lambari','+8 de vida'],['Peixe-cego','+12 de vida, na caverna'],['Tilápia','+15 de vida'],['Peixe-lua','+20 de vida e +20 de mana, só à noite'],['Truta dourada','+30 de vida, rara']],text:'No "!", aperte de novo para fisgar; depois aperte com o cursor na zona verde. Andar recolhe a linha. Os recordes de cada peixe ficam guardados no servidor.'},
+ {cat:'Mecânicas',icon:'shield',name:'Grupo',sum:'Aventure-se com até 4 pessoas.',facts:[['Tecla','G'],['XP','Dividido com quem estiver perto'],['Levantar','Segure E ao lado de um amigo caído']],text:'Uma seta verde na borda da tela aponta para quem está longe. No mapa, marque "venham aqui!" para todos verem por 1 minuto.'},
+ {cat:'Mecânicas',icon:'heart',name:'Vida, mana e nível',sum:'Barras no topo da tela e XP para subir de nível.',facts:[['Vida','Corações e peixes recuperam'],['Mana','Poções e Peixe-lua recuperam'],['Nível','Sobe com XP']],text:'Quando a vida acaba, você cai e aparece uma contagem. Um amigo pode te levantar com metade da vida.'},
+ {cat:'Mecânicas',icon:'sword',name:'PvP',sum:'Lute contra outros jogadores.',facts:[['Tecla','V liga e desliga'],['Sinal','Nome vermelho pode lutar']],text:'Só funciona quando o servidor permite escolher.'}
+];
+var CATS=['Todos','Itens','Inimigos','Locais','Personagens','Mecânicas'],wState={cat:'Todos',q:'',open:null};
+function norm(s){return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')}
+function renderWiki(){
+ var cw=$('#cats');cw.innerHTML='';
+ CATS.forEach(function(c){var n=c==='Todos'?WIKI.length:WIKI.filter(function(e){return e.cat===c}).length;
+  var b=document.createElement('button');b.type='button';b.className='cat';b.setAttribute('aria-pressed',String(wState.cat===c));
+  b.innerHTML='<span></span><span></span>';b.firstChild.textContent=c;b.lastChild.textContent=n;
+  b.addEventListener('click',function(){wState.cat=c;wState.open=null;renderWiki()});cw.appendChild(b)});
+ var q=norm(wState.q.trim()),list=WIKI.filter(function(e){return(wState.cat==='Todos'||e.cat===wState.cat)&&(!q||norm(e.name+' '+e.sum+' '+e.cat).indexOf(q)>=0)});
+ var ew=$('#entries');ew.innerHTML='';
+ if(!list.length){var em=document.createElement('div');em.className='panel empty';em.textContent=wState.q?'Nenhuma página encontrada para “'+wState.q+'”. Tente outro termo.':'Nenhuma página nesta categoria ainda.';ew.appendChild(em);return}
+ list.forEach(function(e,i){
+  var id='en'+i,open=wState.open===e.name,art=document.createElement('article');art.className='entry';
+  var head=document.createElement('button');head.type='button';head.className='entry-head';head.setAttribute('aria-expanded',String(open));head.setAttribute('aria-controls',id);
+  var ic=document.createElement('canvas');ic.className='ico lg';ic.dataset.ico=e.icon;ic.setAttribute('aria-hidden','true');
+  var t=document.createElement('span');t.className='t';
+  var st=document.createElement('strong');st.textContent=e.name;
+  var sm=document.createElement('span');sm.className='s';sm.textContent=e.cat+'. '+e.sum;
+  t.appendChild(st);t.appendChild(sm);
+  var ch=document.createElement('span');ch.className='chev';ch.textContent=open?'-':'+';ch.setAttribute('aria-hidden','true');
+  head.appendChild(ic);head.appendChild(t);head.appendChild(ch);
+  var body=document.createElement('div');body.className='entry-body';body.id=id;body.hidden=!open;
+  var dl=document.createElement('dl');dl.className='facts';
+  e.facts.forEach(function(f){var dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=f[0];dd.textContent=f[1];dl.appendChild(dt);dl.appendChild(dd)});
+  var p=document.createElement('p');p.textContent=e.text;
+  body.appendChild(dl);body.appendChild(p);
+  head.addEventListener('click',function(){wState.open=open?null:e.name;renderWiki()});
+  art.appendChild(head);art.appendChild(body);ew.appendChild(art);
+ });
+ paintIcons(ew);
+}
+$('#wikiq').addEventListener('input',function(e){wState.q=e.target.value;wState.open=null;renderWiki()});
+
+/* ---------- Comandos ---------- */
+/* Edite esta lista com os controles reais do jogo. Cada grupo mostra teclas alternativas separadas por "ou". */
+var COMMANDS=[
+ {name:'Andar',desc:'Ande pelo mapa. Na beira de um barranco, ande para baixo para pular.',alts:[[['W','KeyW'],['A','KeyA'],['S','KeyS'],['D','KeyD']],[['↑','ArrowUp'],['←','ArrowLeft'],['↓','ArrowDown'],['→','ArrowRight']]]},
+ {name:'Botão A',desc:'Usa o que estiver no A (começa com a espada). Segure até brilhar e solte: giro da espada ou magia forte.',alts:[[['J','KeyJ']],[['Z','KeyZ']],[['ESPAÇO','Space']]]},
+ {name:'Botão C',desc:'Usa o que estiver no C (começa com o arco). Clique direito também funciona.',alts:[[['L','KeyL']],[['C','KeyC']]]},
+ {name:'Dash',desc:'Segure para correr até bater em algo ou virar para trás.',alts:[[['SHIFT','ShiftLeft']],[['Q','KeyQ']]]},
+ {name:'Ação',desc:'Pega itens, abre baús, fala, lê placas e levanta arbustos e pedras. Aperte de novo para arremessar.',alts:[[['E','KeyE']],[['K','KeyK']],[['X','KeyX']]]},
+ {name:'Itens rápidos',desc:'Coração, poção de mana e bomba acesa.',alts:[[['1','Digit1'],['2','Digit2'],['3','Digit3']]]},
+ {name:'Pescar',desc:'De frente para a água, lança a linha. No "!", aperte de novo para fisgar.',alts:[[['E','KeyE']],[['F','KeyF']]]},
+ {name:'Inventário',desc:'Abre a mochila. Os botões A e C no topo trocam o que vai em cada um.',alts:[[['I','KeyI']]]},
+ {name:'Mapa',desc:'O mapa se revela conforme você explora. Clique num lugar para marcar "venham aqui!".',alts:[[['M','KeyM']]]},
+ {name:'Grupo',desc:'Convide quem está online, até 4 pessoas.',alts:[[['G','KeyG']]]},
+ {name:'Chat',desc:'Abre e envia. Tab troca entre Perto e Todos.',alts:[[['ENTER','Enter']],[['TAB','Tab']]]},
+ {name:'PvP e menu',desc:'V liga e desliga o PvP (quando o servidor deixa). Esc abre o menu.',alts:[[['V','KeyV']],[['ESC','Escape']]]}
+];
+function renderCmds(){
+ var w=$('#cmds');w.innerHTML='';
+ COMMANDS.forEach(function(c){
+  var a=document.createElement('article');a.className='panel cmd';
+  var h=document.createElement('h3');h.className='h3';h.textContent=c.name;
+  var p=document.createElement('p');p.textContent=c.desc;
+  var k=document.createElement('div');k.className='keys';
+  c.alts.forEach(function(grp,gi){
+   if(gi>0){var o=document.createElement('span');o.className='or';o.textContent='ou';k.appendChild(o)}
+   grp.forEach(function(kk){var b=document.createElement('kbd');b.textContent=kk[0];b.dataset.code=kk[1];if(kk[0].length>1&&/^[A-ZÇÃ]+$/.test(kk[0]))b.className='wide';
+    b.addEventListener('pointerdown',function(){b.classList.add('down')});
+    ['pointerup','pointerleave','pointercancel'].forEach(function(ev){b.addEventListener(ev,function(){b.classList.remove('down')})});
+    k.appendChild(b)});
+  });
+  a.appendChild(h);a.appendChild(p);a.appendChild(k);w.appendChild(a);
+ });
+}
+function normCode(c){if(c==='ShiftRight')return 'ShiftLeft';if(c==='NumpadEnter')return 'Enter';return c}
+function markKey(code,on){var c=normCode(code);$$('kbd[data-code="'+c+'"]').forEach(function(k){k.classList.toggle('down',on)})}
+addEventListener('keydown',function(e){if(cur==='comandos')markKey(e.code,true)});
+addEventListener('keyup',function(e){markKey(e.code,false)});
+addEventListener('blur',function(){$$('kbd.down').forEach(function(k){k.classList.remove('down')})});
+
+/* ---------- Lightbox ---------- */
+var lb=$('#lb'),lbImg=$('#lbImg'),lastFocus=null;
+function openLb(src,alt){lastFocus=document.activeElement;lbImg.src=src;lbImg.alt=alt||'';lb.hidden=false;$('#lbClose').focus()}
+function closeLb(){lb.hidden=true;lbImg.src='';if(lastFocus&&lastFocus.focus)lastFocus.focus()}
+$$('.shot-btn').forEach(function(b){b.addEventListener('click',function(){openLb(b.dataset.src,b.dataset.alt)})});
+$('#lbClose').addEventListener('click',closeLb);
+lb.addEventListener('click',function(e){if(e.target===lb)closeLb()});
+addEventListener('keydown',function(e){if(e.key==='Escape'){if(!lb.hidden)closeLb();else if(!toast.hidden)hideToast()}});
+
+/* ---------- Início ---------- */
+paintIcons(document);
+$$('canvas[data-sprite]').forEach(function(cv){shopSprite(cv.dataset.sprite,cv)});
+drawChest(false);
+renderWiki();renderCmds();
+buildBg();
+var rz;addEventListener('resize',function(){clearTimeout(rz);rz=setTimeout(function(){buildBg();dirty=true},120)});
+addEventListener('scroll',function(){if(reduce)dirty=true},{passive:true});
+addEventListener('hashchange',route);
+route();
+clockEl.dataset.open=String(sky.open);$('#clkOpen').setAttribute('aria-expanded',String(sky.open));
+syncCtl();drawBg(0);ui();
+requestAnimationFrame(tick);
+})();
+</script>
+
+</body></html>
